@@ -16,10 +16,12 @@ VITALS = [
     {"name": "respiratory-rate", "minvalue": 12, "maxvalue": 20, "tol": 0.015, "unit": "bpm", "message": "Respiratory Rate out of range!"},
 ]
 
+# ------------------------
+# I/O Functions
+# ------------------------
 def display(message):
-    """Display a translated message with simple animation"""
-    translated_message = translate(message, LANGUAGE)
-    print(translated_message)
+    """Display a translated message with animation"""
+    print(translate(message, LANGUAGE))
     for _ in range(6):
         print("\r* ", end="")
         sys.stdout.flush()
@@ -33,44 +35,54 @@ def translate(text, target):
     """Translate text to target language and uppercase it"""
     return GoogleTranslator(target=target).translate(text).upper()
 
+# ------------------------
+# Sensor simulation
+# ------------------------
 def sensorStub():
     """Simulate sensor readings"""
     return {vital["name"]: random.randint(vital["minvalue"], vital["maxvalue"]) for vital in VITALS}
 
-def is_inrange(value, min_value, max_value):
-    """Check if value is in range"""
+# ------------------------
+# Pure logic functions
+# ------------------------
+def is_vital_ok(value, min_value, max_value):
+    """Check if a single vital is within range"""
     return min_value <= value <= max_value
 
-def check_vitals(value, min_value, max_value, message):
-    """Check if vital is within range, otherwise display message"""
-    return is_inrange(value, min_value, max_value) or display(message)
-
-def calculate_ranges(obj):
-    """Generate threshold ranges for a vital"""
-    minvalue, maxvalue, tol = obj["minvalue"], obj["maxvalue"], obj["tol"]
+def get_vital_state(vital_obj, value):
+    """Return the state (HYPO, NORMAL, HYPER...) of a vital"""
+    minvalue, maxvalue, tol = vital_obj["minvalue"], vital_obj["maxvalue"], vital_obj["tol"]
     tolvalue = maxvalue * tol
-    return [
-        lambda val: val <= minvalue,
-        lambda val: minvalue < val <= minvalue + tolvalue,
-        lambda val: minvalue + tolvalue < val <= maxvalue - tolvalue,
-        lambda val: maxvalue - tolvalue < val < maxvalue,
-        lambda val: val >= maxvalue,
+    thresholds = [
+        (lambda v: v <= minvalue, "HYPO"),
+        (lambda v: minvalue < v <= minvalue + tolvalue, "NEAR_HYPO"),
+        (lambda v: minvalue + tolvalue < v <= maxvalue - tolvalue, "NORMAL"),
+        (lambda v: maxvalue - tolvalue < v < maxvalue, "NEAR_HYPER"),
+        (lambda v: v >= maxvalue, "HYPER"),
     ]
-
-def print_status(obj, value):
-    """Print the status of a vital based on predefined states"""
-    ranges = calculate_ranges(obj)
-    for index, check in enumerate(ranges):
+    for check, state in thresholds:
         if check(value):
-            print(f"{obj['name']} - {STATES[index]}")
-            break
-    return True
+            return state
+    return "UNKNOWN"
+
+# ------------------------
+# High-level operations
+# ------------------------
+def report_vitals(sensor_data):
+    """Print the state of each vital and check for critical values"""
+    for vital in VITALS:
+        value = sensor_data[vital["name"]]
+        state = get_vital_state(vital, value)
+        print(f"{vital['name']} - {state}")
+        check_vitals(value, vital["minvalue"], vital["maxvalue"], vital["message"])
+
+def check_vitals(value, min_value, max_value, message):
+    """Check if vital is within range, display message if not"""
+    return is_vital_ok(value, min_value, max_value) or display(message)
 
 def vitals_ok(sensor_data):
-    """Check all vitals and return overall status"""
-    for obj in VITALS:
-        value = sensor_data[obj["name"]]
-        print_status(obj, value)
-        if not check_vitals(value, obj["minvalue"], obj["maxvalue"], obj["message"]):
+    """Return True if all vitals are within range"""
+    for vital in VITALS:
+        if not check_vitals(sensor_data[vital["name"]], vital["minvalue"], vital["maxvalue"], vital["message"]):
             return False
     return True
